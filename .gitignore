@@ -1,6 +1,7 @@
 cadvisor
 /release
 .vscode
+_output/
 
 # Log files
 *.log
@@ -12,3 +13,6 @@ cadvisor
 .idea/
 *.iml
 *.swp
+
+# stray binary from `go build .` in the cmd module
+/cmd/cmd

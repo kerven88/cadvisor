@@ -14,7 +14,9 @@
 
 // This is an implementation of a cAdvisor REST API in Go.
 // To use it, create a client (replace the URL with your actual cAdvisor REST endpoint):
-//   client, err := client.NewClient("http://192.168.59.103:8080/")
+//
+//	client, err := client.NewClient("http://192.168.59.103:8080/")
+//
 // Then, the client interface exposes go methods corresponding to the REST endpoints.
 package client
 
@@ -23,12 +25,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"path"
 	"strings"
 
-	"github.com/google/cadvisor/info/v1"
+	v1 "github.com/google/cadvisor/info/v1"
 
 	"k8s.io/klog/v2"
 )
@@ -185,7 +186,7 @@ func (c *Client) httpGetJSONData(data, postData interface{}, url, infoName strin
 		return fmt.Errorf("received empty response for %q from %q", infoName, url)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		err = fmt.Errorf("unable to read all %q from %q: %v", infoName, url, err)
 		return err
@@ -210,11 +211,11 @@ func (c *Client) getEventStreamingData(url string, einfo chan *v1.Event) error {
 		return err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Status code is not OK: %v (%s)", resp.StatusCode, resp.Status)
+		return fmt.Errorf("status code is not OK: %v (%s)", resp.StatusCode, resp.Status)
 	}
 
 	dec := json.NewDecoder(resp.Body)
-	var m *v1.Event = &v1.Event{}
+	m := &v1.Event{}
 	for {
 		err := dec.Decode(m)
 		if err != nil {

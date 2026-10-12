@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 package pages
 
 import (
@@ -23,8 +25,9 @@ import (
 	"time"
 
 	"github.com/google/cadvisor/container/docker"
+	dockerutil "github.com/google/cadvisor/container/docker/utils"
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/manager"
+	"github.com/google/cadvisor/lib/manager"
 
 	"k8s.io/klog/v2"
 )
@@ -39,12 +42,12 @@ func toStatusKV(status info.DockerStatus) ([]keyVal, []keyVal) {
 		ds = append(ds, keyVal{Key: k, Value: v})
 	}
 	return []keyVal{
-		{Key: "Docker Version", Value: status.Version},
-		{Key: "Docker API Version", Value: status.APIVersion},
+		{Key: "Version", Value: status.Version},
+		{Key: "API Version", Value: status.APIVersion},
 		{Key: "Kernel Version", Value: status.KernelVersion},
 		{Key: "OS Version", Value: status.OS},
 		{Key: "Host Name", Value: status.Hostname},
-		{Key: "Docker Root Directory", Value: status.RootDir},
+		{Key: "Root Directory", Value: status.RootDir},
 		{Key: "Execution  Driver", Value: status.ExecDriver},
 		{Key: "Number of Images", Value: strconv.Itoa(status.NumImages)},
 		{Key: "Number of Containers", Value: strconv.Itoa(status.NumContainers)},
@@ -73,12 +76,12 @@ func serveDockerPage(m manager.Manager, w http.ResponseWriter, u *url.URL) {
 		for _, cont := range conts {
 			subcontainers = append(subcontainers, link{
 				Text: getContainerDisplayName(cont.ContainerReference),
-				Link: path.Join(rootDir, DockerPage, docker.ContainerNameToDockerId(cont.ContainerReference.Name)),
+				Link: path.Join(rootDir, DockerPage, dockerutil.ContainerNameToId(cont.ContainerReference.Name)),
 			})
 		}
 
 		// Get Docker status
-		status, err := m.DockerInfo()
+		status, err := docker.Status()
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to get docker info: %v", err), http.StatusInternalServerError)
 			return
@@ -86,7 +89,7 @@ func serveDockerPage(m manager.Manager, w http.ResponseWriter, u *url.URL) {
 
 		dockerStatus, driverStatus := toStatusKV(status)
 		// Get Docker Images
-		images, err := m.DockerImages()
+		images, err := docker.Images()
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to get docker images: %v", err), http.StatusInternalServerError)
 			return
@@ -126,7 +129,7 @@ func serveDockerPage(m manager.Manager, w http.ResponseWriter, u *url.URL) {
 		})
 		parentContainers = append(parentContainers, link{
 			Text: displayName,
-			Link: path.Join(rootDir, DockerPage, docker.ContainerNameToDockerId(cont.Name)),
+			Link: path.Join(rootDir, DockerPage, dockerutil.ContainerNameToId(cont.Name)),
 		})
 
 		// Get the MachineInfo
@@ -158,5 +161,4 @@ func serveDockerPage(m manager.Manager, w http.ResponseWriter, u *url.URL) {
 	}
 
 	klog.V(5).Infof("Request took %s", time.Since(start))
-	return
 }

@@ -21,7 +21,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,8 +32,9 @@ import (
 	"sync"
 	"time"
 
-	cadvisorApi "github.com/google/cadvisor/info/v2"
 	"k8s.io/klog/v2"
+
+	cadvisorApi "github.com/google/cadvisor/info/v2"
 )
 
 // must be able to ssh into hosts without password
@@ -62,7 +63,7 @@ func getAttributes(ipAddress, portStr string) (*cadvisorApi.Attributes, error) {
 		return nil, fmt.Errorf("failed to get attributes. Status code - %v", resp.StatusCode)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read attributes response body - %v", err)
 	}
@@ -113,7 +114,7 @@ func PushAndRunTests(host, testDir string) (result error) {
 	portStr := strconv.Itoa(*port)
 	errChan := make(chan error, 1)
 	go func() {
-		err = RunSshCommand("ssh", host, "--", fmt.Sprintf("sudo GORACE='halt_on_error=1' %s --port %s --logtostderr --docker_env_metadata_whitelist=TEST_VAR  &> %s/log.txt", path.Join(testDir, cadvisorBinary), portStr, testDir))
+		err = RunSshCommand("ssh", host, "--", fmt.Sprintf("sudo GORACE='halt_on_error=1' %s --port %s --logtostderr --env_metadata_whitelist=TEST_VAR  &> %s/log.txt", path.Join(testDir, cadvisorBinary), portStr, testDir))
 		if err != nil {
 			errChan <- fmt.Errorf("error running cAdvisor: %v", err)
 		}
@@ -133,7 +134,7 @@ func PushAndRunTests(host, testDir string) (result error) {
 				return
 			}
 			defer os.Remove("./log.txt")
-			logs, err := ioutil.ReadFile("./log.txt")
+			logs, err := os.ReadFile("./log.txt")
 			if err != nil {
 				result = fmt.Errorf("error reading local log file: %v for %v", err, result)
 				return

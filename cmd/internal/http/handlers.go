@@ -23,13 +23,15 @@ import (
 	httpmux "github.com/google/cadvisor/cmd/internal/http/mux"
 	"github.com/google/cadvisor/cmd/internal/pages"
 	"github.com/google/cadvisor/cmd/internal/pages/static"
-	"github.com/google/cadvisor/container"
-	"github.com/google/cadvisor/manager"
-	"github.com/google/cadvisor/metrics"
+	"github.com/google/cadvisor/lib/container"
+	"github.com/google/cadvisor/lib/manager"
+	"github.com/google/cadvisor/lib/metrics"
 	"github.com/google/cadvisor/validate"
 
 	auth "github.com/abbot/go-http-auth"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/clock"
@@ -81,7 +83,7 @@ func RegisterHandlers(mux httpmux.Mux, containerManager manager.Manager, httpAut
 		authenticated = true
 	}
 
-	// Change handler based on authenticator initalization
+	// Change handler based on authenticator initialization
 	if !authenticated {
 		mux.HandleFunc(static.StaticResource, staticHandlerNoAuth)
 		if err := pages.RegisterHandlersBasic(mux, containerManager, nil, urlBasePrefix); err != nil {
@@ -96,8 +98,8 @@ func RegisterHandlers(mux httpmux.Mux, containerManager manager.Manager, httpAut
 // the provided HTTP mux to handle the given Prometheus endpoint.
 func RegisterPrometheusHandler(mux httpmux.Mux, resourceManager manager.Manager, prometheusEndpoint string,
 	f metrics.ContainerLabelsFunc, includedMetrics container.MetricSet) {
-	goCollector := prometheus.NewGoCollector()
-	processCollector := prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{})
+	goCollector := collectors.NewGoCollector()
+	processCollector := collectors.NewProcessCollector(collectors.ProcessCollectorOpts{})
 	machineCollector := metrics.NewPrometheusMachineCollector(resourceManager, includedMetrics)
 
 	mux.Handle(prometheusEndpoint, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -111,7 +113,7 @@ func RegisterPrometheusHandler(mux httpmux.Mux, resourceManager manager.Manager,
 
 		r := prometheus.NewRegistry()
 		r.MustRegister(
-			metrics.NewPrometheusCollector(resourceManager, f, includedMetrics, clock.RealClock{}, opts),
+			metrics.NewPrometheusCollector(api.WrapManagerForOOM(resourceManager), f, includedMetrics, clock.RealClock{}, opts),
 			machineCollector,
 			goCollector,
 			processCollector,

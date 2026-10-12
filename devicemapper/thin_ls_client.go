@@ -11,6 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package devicemapper
 
 import (
@@ -57,7 +58,7 @@ func (c *defaultThinLsClient) ThinLs(deviceName string) (map[string]uint64, erro
 
 	output, err := exec.Command(c.thinLsPath, args...).Output()
 	if err != nil {
-		return nil, fmt.Errorf("Error running command `thin_ls %v`: %v\noutput:\n\n%v", strings.Join(args, " "), err, string(output))
+		return nil, fmt.Errorf("error running command `thin_ls %v`: %v\noutput:\n\n%v", strings.Join(args, " "), err, string(output))
 	}
 
 	return parseThinLsOutput(output), nil

@@ -19,7 +19,7 @@ import (
 
 	client "github.com/google/cadvisor/cmd/internal/storage/statsd/client"
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/storage"
+	"github.com/google/cadvisor/lib/storage"
 )
 
 func init() {
@@ -35,12 +35,12 @@ const (
 	// Cumulative CPU usage
 	// To be deprecated in 0.39
 	// https://github.com/google/cadvisor/issues/2637
-	colCpuCumulativeUsage string = "cpu_cumulative_usage"
+	colCPUCumulativeUsage string = "cpu_cumulative_usage"
 	// Cumulative CPU usage
-	serCpuUsageTotal  string = "cpu_usage_total"
-	serCpuUsageSystem string = "cpu_usage_system"
-	serCpuUsageUser   string = "cpu_usage_user"
-	serCpuUsagePerCpu string = "cpu_usage_per_cpu"
+	serCPUUsageTotal  string = "cpu_usage_total"
+	serCPUUsageSystem string = "cpu_usage_system"
+	serCPUUsageUser   string = "cpu_usage_user"
+	serCPUUsagePerCPU string = "cpu_usage_per_cpu"
 	// Smoothed average of number of runnable threads x 1000.
 	serLoadAverage string = "cpu_load_average"
 	// Memory Usage
@@ -57,6 +57,10 @@ const (
 	serMemoryMappedFile string = "memory_mapped_file"
 	// Working set size
 	serMemoryWorkingSet string = "memory_working_set"
+	// Total active file size
+	serMemoryTotalActiveFile string = "memory_total_active_file"
+	// Total inactive file size
+	serMemoryTotalInactiveFile string = "memory_total_inactive_file"
 	// Number of memory usage hits limits
 	serMemoryFailcnt string = "memory_failcnt"
 	// Cumulative count of memory allocation failures
@@ -101,20 +105,20 @@ func (s *statsdStorage) containerStatsToValues(stats *info.ContainerStats) (seri
 	series = make(map[string]uint64)
 
 	// Total usage in nanoseconds
-	series[serCpuUsageTotal] = stats.Cpu.Usage.Total
+	series[serCPUUsageTotal] = stats.Cpu.Usage.Total
 
 	// To be deprecated in 0.39
-	series[colCpuCumulativeUsage] = series[serCpuUsageTotal]
+	series[colCPUCumulativeUsage] = series[serCPUUsageTotal]
 
 	// CPU usage: Time spend in system space (in nanoseconds)
-	series[serCpuUsageSystem] = stats.Cpu.Usage.System
+	series[serCPUUsageSystem] = stats.Cpu.Usage.System
 
 	// CPU usage: Time spent in user space (in nanoseconds)
-	series[serCpuUsageUser] = stats.Cpu.Usage.User
+	series[serCPUUsageUser] = stats.Cpu.Usage.User
 
 	// CPU usage per CPU
 	for i := 0; i < len(stats.Cpu.Usage.PerCpu); i++ {
-		series[serCpuUsagePerCpu+"."+strconv.Itoa(i)] = stats.Cpu.Usage.PerCpu[i]
+		series[serCPUUsagePerCPU+"."+strconv.Itoa(i)] = stats.Cpu.Usage.PerCpu[i]
 	}
 
 	// Load Average
@@ -159,6 +163,10 @@ func (s *statsdStorage) memoryStatsToValues(series *map[string]uint64, stats *in
 	(*series)[serMemoryMappedFile] = stats.Memory.MappedFile
 	// Working Set Size
 	(*series)[serMemoryWorkingSet] = stats.Memory.WorkingSet
+	// Total Active File Size
+	(*series)[serMemoryTotalActiveFile] = stats.Memory.TotalActiveFile
+	// Total Inactive File Size
+	(*series)[serMemoryTotalInactiveFile] = stats.Memory.TotalInactiveFile
 	// Number of memory usage hits limits
 	(*series)[serMemoryFailcnt] = stats.Memory.Failcnt
 
@@ -194,7 +202,7 @@ func (s *statsdStorage) resctrlStatsToValues(series *map[string]uint64, stats *i
 
 }
 
-// Push the data into redis
+// Push the data via the statsd client
 func (s *statsdStorage) AddStats(cInfo *info.ContainerInfo, stats *info.ContainerStats) error {
 	if stats == nil {
 		return nil

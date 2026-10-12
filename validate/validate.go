@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 // Handler for /validate content.
 // Validates cadvisor dependencies - kernel, os, docker setup.
 
@@ -19,7 +21,6 @@ package validate
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -27,10 +28,10 @@ import (
 	"strings"
 
 	"github.com/google/cadvisor/container/docker"
-	"github.com/google/cadvisor/manager"
-	"github.com/google/cadvisor/utils"
+	"github.com/google/cadvisor/lib/manager"
+	"github.com/google/cadvisor/lib/utils"
 
-	"github.com/opencontainers/runc/libcontainer/cgroups"
+	"github.com/opencontainers/cgroups"
 )
 
 const (
@@ -96,7 +97,7 @@ func validateDockerVersion(version string) (string, string) {
 }
 
 func getEnabledCgroups() (map[string]int, error) {
-	out, err := ioutil.ReadFile("/proc/cgroups")
+	out, err := os.ReadFile("/proc/cgroups")
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +165,7 @@ func validateMemoryAccounting(availableCgroups map[string]int) string {
 		if err != nil {
 			return "\tHierarchical memory accounting status unknown: memory cgroup not mounted.\n"
 		}
-		hier, err := ioutil.ReadFile(path.Join(mnt, "memory.use_hierarchy"))
+		hier, err := os.ReadFile(path.Join(mnt, "memory.use_hierarchy"))
 		if err != nil {
 			return "\tHierarchical memory accounting status unknown: hierarchy interface unavailable.\n"
 		}
@@ -208,7 +209,7 @@ func validateCgroups() (string, string) {
 }
 
 func validateDockerInfo() (string, string) {
-	info, err := docker.ValidateInfo()
+	info, err := docker.ValidateInfo(docker.Info, docker.VersionString)
 	if err != nil {
 		return Unsupported, fmt.Sprintf("Docker setup is invalid: %v", err)
 	}
@@ -232,7 +233,7 @@ func validateCgroupMounts() (string, string) {
 		out += desc
 		return Unsupported, out
 	}
-	mounts, err := ioutil.ReadDir(mnt)
+	mounts, err := os.ReadDir(mnt)
 	if err != nil {
 		out := fmt.Sprintf("Could not read cgroup mount directory %s.\n", mnt)
 		out += desc
@@ -246,7 +247,7 @@ func validateCgroupMounts() (string, string) {
 	out := fmt.Sprintf("Cgroups are mounted at %s.\n", mnt)
 	out += mountNames
 	out += desc
-	info, err := ioutil.ReadFile("/proc/mounts")
+	info, err := os.ReadFile("/proc/mounts")
 	if err != nil {
 		out := "Could not read /proc/mounts.\n"
 		out += desc

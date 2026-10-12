@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 package docker
 
 import (
+	"context"
 	"time"
 
-	"github.com/google/cadvisor/container"
-	"github.com/google/cadvisor/fs"
-	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/watcher"
-	"golang.org/x/net/context"
 	"k8s.io/klog/v2"
+
+	info "github.com/google/cadvisor/info/v1"
+	"github.com/google/cadvisor/lib/container"
+	"github.com/google/cadvisor/lib/fs"
+	"github.com/google/cadvisor/lib/watcher"
 )
 
 const dockerClientTimeout = 10 * time.Second
@@ -55,7 +58,8 @@ func retryDockerStatus() info.DockerStatus {
 	startupTimeout := dockerClientTimeout
 	maxTimeout := 4 * startupTimeout
 	for {
-		ctx, _ := context.WithTimeout(context.Background(), startupTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
+		defer cancel()
 		dockerStatus, err := StatusWithContext(ctx)
 		if err == nil {
 			return dockerStatus

@@ -23,8 +23,8 @@ import (
 	"time"
 
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/storage"
-	"github.com/google/cadvisor/version"
+	"github.com/google/cadvisor/lib/storage"
+	"github.com/google/cadvisor/lib/version"
 
 	influxdb "github.com/influxdb/influxdb/client"
 )
@@ -50,10 +50,10 @@ type influxdbStorage struct {
 // Series names
 const (
 	// Cumulative CPU usage
-	serCpuUsageTotal  string = "cpu_usage_total"
-	serCpuUsageSystem string = "cpu_usage_system"
-	serCpuUsageUser   string = "cpu_usage_user"
-	serCpuUsagePerCpu string = "cpu_usage_per_cpu"
+	serCPUUsageTotal  string = "cpu_usage_total"
+	serCPUUsageSystem string = "cpu_usage_system"
+	serCPUUsageUser   string = "cpu_usage_user"
+	serCPUUsagePerCPU string = "cpu_usage_per_cpu"
 	// Smoothed average of number of runnable threads x 1000.
 	serLoadAverage string = "load_average"
 	// Memory Usage
@@ -70,6 +70,10 @@ const (
 	serMemoryMappedFile string = "memory_mapped_file"
 	// Working set size
 	serMemoryWorkingSet string = "memory_working_set"
+	// Total active file size
+	serMemoryTotalActiveFile string = "memory_total_active_file"
+	// Total inactive file size
+	serMemoryTotalInactiveFile string = "memory_total_inactive_file"
 	// Number of memory usage hits limits
 	serMemoryFailcnt string = "memory_failcnt"
 	// Cumulative count of memory allocation failures
@@ -204,17 +208,17 @@ func (s *influxdbStorage) containerStatsToPoints(
 	stats *info.ContainerStats,
 ) (points []*influxdb.Point) {
 	// CPU usage: Total usage in nanoseconds
-	points = append(points, makePoint(serCpuUsageTotal, stats.Cpu.Usage.Total))
+	points = append(points, makePoint(serCPUUsageTotal, stats.Cpu.Usage.Total))
 
 	// CPU usage: Time spend in system space (in nanoseconds)
-	points = append(points, makePoint(serCpuUsageSystem, stats.Cpu.Usage.System))
+	points = append(points, makePoint(serCPUUsageSystem, stats.Cpu.Usage.System))
 
 	// CPU usage: Time spent in user space (in nanoseconds)
-	points = append(points, makePoint(serCpuUsageUser, stats.Cpu.Usage.User))
+	points = append(points, makePoint(serCPUUsageUser, stats.Cpu.Usage.User))
 
 	// CPU usage per CPU
 	for i := 0; i < len(stats.Cpu.Usage.PerCpu); i++ {
-		point := makePoint(serCpuUsagePerCpu, stats.Cpu.Usage.PerCpu[i])
+		point := makePoint(serCPUUsagePerCPU, stats.Cpu.Usage.PerCpu[i])
 		tags := map[string]string{"instance": fmt.Sprintf("%v", i)}
 		addTagsToPoint(point, tags)
 
@@ -256,6 +260,10 @@ func (s *influxdbStorage) memoryStatsToPoints(
 	points = append(points, makePoint(serMemoryMappedFile, stats.Memory.MappedFile))
 	// Working Set Size
 	points = append(points, makePoint(serMemoryWorkingSet, stats.Memory.WorkingSet))
+	// Total Active File Size
+	points = append(points, makePoint(serMemoryTotalActiveFile, stats.Memory.TotalActiveFile))
+	// Total Inactive File Size
+	points = append(points, makePoint(serMemoryTotalInactiveFile, stats.Memory.TotalInactiveFile))
 	// Number of memory usage hits limits
 	points = append(points, makePoint(serMemoryFailcnt, stats.Memory.Failcnt))
 
@@ -512,13 +520,6 @@ func checkResponseForErrors(response *influxdb.Response) error {
 		for _, result := range response.Results {
 			if result.Err != nil {
 				return fmt.Errorf(msg, result.Err)
-			}
-			if result.Series != nil {
-				for _, row := range result.Series {
-					if row.Err != nil {
-						return fmt.Errorf(msg, row.Err)
-					}
-				}
 			}
 		}
 	}

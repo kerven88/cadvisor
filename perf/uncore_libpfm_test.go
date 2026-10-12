@@ -1,4 +1,4 @@
-// +build libpfm,cgo
+//go:build libpfm && cgo
 
 // Copyright 2020 Google Inc. All Rights Reserved.
 //
@@ -20,7 +20,6 @@ package perf
 import (
 	"bytes"
 	"encoding/binary"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +32,7 @@ import (
 )
 
 func mockSystemDevices() (string, error) {
-	testDir, err := ioutil.TempDir("", "uncore_imc_test")
+	testDir, err := os.MkdirTemp("", "uncore_imc_test")
 	if err != nil {
 		return "", err
 	}
@@ -44,11 +43,11 @@ func mockSystemDevices() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = ioutil.WriteFile(filepath.Join(firstPMUPath, "cpumask"), []byte("0-1"), 0777)
+	err = os.WriteFile(filepath.Join(firstPMUPath, "cpumask"), []byte("0-1"), 0777)
 	if err != nil {
 		return "", err
 	}
-	err = ioutil.WriteFile(filepath.Join(firstPMUPath, "type"), []byte("18"), 0777)
+	err = os.WriteFile(filepath.Join(firstPMUPath, "type"), []byte("18"), 0777)
 	if err != nil {
 		return "", err
 	}
@@ -59,11 +58,11 @@ func mockSystemDevices() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = ioutil.WriteFile(filepath.Join(secondPMUPath, "cpumask"), []byte("0,1"), 0777)
+	err = os.WriteFile(filepath.Join(secondPMUPath, "cpumask"), []byte("0,1"), 0777)
 	if err != nil {
 		return "", err
 	}
-	err = ioutil.WriteFile(filepath.Join(secondPMUPath, "type"), []byte("19"), 0777)
+	err = os.WriteFile(filepath.Join(secondPMUPath, "type"), []byte("19"), 0777)
 	if err != nil {
 		return "", err
 	}
@@ -114,6 +113,7 @@ func TestUncoreCollectorSetup(t *testing.T) {
 		Uncore: Events{
 			Events: []Group{
 				{[]Event{"uncore_imc_1/cas_count_read"}, false},
+				{[]Event{"uncore_imc_1/non_existing_event"}, false},
 				{[]Event{"uncore_imc_0/cas_count_write", "uncore_imc_0/cas_count_read"}, true},
 			},
 			CustomEvents: []CustomEvent{
@@ -133,6 +133,11 @@ func TestUncoreCollectorSetup(t *testing.T) {
 	}
 
 	err = collector.setup(events, path)
+	assert.Equal(t, []string{"uncore_imc_1/cas_count_read"},
+		getMapKeys(collector.cpuFiles[0]["uncore_imc_1"].cpuFiles))
+	assert.ElementsMatch(t, []string{"uncore_imc_0/cas_count_write", "uncore_imc_0/cas_count_read"},
+		getMapKeys(collector.cpuFiles[2]["uncore_imc_0"].cpuFiles))
+
 	// There are no errors.
 	assert.Nil(t, err)
 }
@@ -294,4 +299,12 @@ func TestReadPerfUncoreStat(t *testing.T) {
 	}, 1, "bar", cpuToSocket)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedStat, stat)
+}
+
+func getMapKeys(someMap map[string]map[int]readerCloser) []string {
+	var keys []string
+	for key := range someMap {
+		keys = append(keys, key)
+	}
+	return keys
 }

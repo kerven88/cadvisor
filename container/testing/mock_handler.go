@@ -15,8 +15,8 @@
 package testing
 
 import (
-	"github.com/google/cadvisor/container"
 	info "github.com/google/cadvisor/info/v1"
+	"github.com/google/cadvisor/lib/container"
 
 	"github.com/stretchr/testify/mock"
 )
@@ -101,6 +101,11 @@ func (h *MockContainerHandler) GetContainerIPAddress() string {
 	return args.Get(0).(string)
 }
 
+func (h *MockContainerHandler) GetExitCode() (int, error) {
+	args := h.Called()
+	return args.Int(0), args.Error(1)
+}
+
 type FactoryForMockContainerHandler struct {
 	Name                        string
 	PrepareContainerHandlerFunc func(name string, handler *MockContainerHandler)
@@ -110,7 +115,7 @@ func (h *FactoryForMockContainerHandler) String() string {
 	return h.Name
 }
 
-func (h *FactoryForMockContainerHandler) NewContainerHandler(name string, inHostNamespace bool) (container.ContainerHandler, error) {
+func (h *FactoryForMockContainerHandler) NewContainerHandler(name string, metadataEnvAllowList []string, inHostNamespace bool) (container.ContainerHandler, error) {
 	handler := &MockContainerHandler{}
 	if h.PrepareContainerHandlerFunc != nil {
 		h.PrepareContainerHandlerFunc(name, handler)

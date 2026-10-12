@@ -21,7 +21,7 @@ import (
 	"time"
 
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/storage"
+	"github.com/google/cadvisor/lib/storage"
 )
 
 func init() {
@@ -37,12 +37,12 @@ const (
 	// Cumulative CPU usage
 	// To be deprecated in 0.39
 	// https://github.com/google/cadvisor/issues/2637
-	colCpuCumulativeUsage string = "cpu_cumulative_usage"
+	colCPUCumulativeUsage string = "cpu_cumulative_usage"
 	// Cumulative CPU usage
-	serCpuUsageTotal  string = "cpu_usage_total"
-	serCpuUsageSystem string = "cpu_usage_system"
-	serCpuUsageUser   string = "cpu_usage_user"
-	serCpuUsagePerCpu string = "cpu_usage_per_cpu"
+	serCPUUsageTotal  string = "cpu_usage_total"
+	serCPUUsageSystem string = "cpu_usage_system"
+	serCPUUsageUser   string = "cpu_usage_user"
+	serCPUUsagePerCPU string = "cpu_usage_per_cpu"
 	// Smoothed average of number of runnable threads x 1000.
 	serLoadAverage string = "load_average"
 	// Memory Usage
@@ -59,6 +59,10 @@ const (
 	serMemoryMappedFile string = "memory_mapped_file"
 	// Working set size
 	serMemoryWorkingSet string = "memory_working_set"
+	// Total active file
+	serMemoryTotalActiveFile string = "memory_total_active_file"
+	// Total inactive file
+	serMemoryTotalInactiveFile string = "memory_total_inactive_file"
 	// Number of memory usage hits limits
 	serMemoryFailcnt string = "memory_failcnt"
 	// Cumulative count of memory allocation failures
@@ -105,31 +109,36 @@ func (driver *stdoutStorage) containerStatsToValues(stats *info.ContainerStats) 
 	// Unix Timestamp
 	series[serTimestamp] = uint64(time.Now().UnixNano())
 
-	// Total usage in nanoseconds
-	series[serCpuUsageTotal] = stats.Cpu.Usage.Total
+	// Cpu/Network became pointers; some containers omit one or both.
+	if stats.Cpu != nil {
+		// Total usage in nanoseconds
+		series[serCPUUsageTotal] = stats.Cpu.Usage.Total
 
-	// To be deprecated in 0.39
-	series[colCpuCumulativeUsage] = series[serCpuUsageTotal]
+		// To be deprecated in 0.39
+		series[colCPUCumulativeUsage] = series[serCPUUsageTotal]
 
-	// CPU usage: Time spend in system space (in nanoseconds)
-	series[serCpuUsageSystem] = stats.Cpu.Usage.System
+		// CPU usage: Time spend in system space (in nanoseconds)
+		series[serCPUUsageSystem] = stats.Cpu.Usage.System
 
-	// CPU usage: Time spent in user space (in nanoseconds)
-	series[serCpuUsageUser] = stats.Cpu.Usage.User
+		// CPU usage: Time spent in user space (in nanoseconds)
+		series[serCPUUsageUser] = stats.Cpu.Usage.User
 
-	// CPU usage per CPU
-	for i := 0; i < len(stats.Cpu.Usage.PerCpu); i++ {
-		series[serCpuUsagePerCpu+"."+strconv.Itoa(i)] = stats.Cpu.Usage.PerCpu[i]
+		// CPU usage per CPU
+		for i := 0; i < len(stats.Cpu.Usage.PerCpu); i++ {
+			series[serCPUUsagePerCPU+"."+strconv.Itoa(i)] = stats.Cpu.Usage.PerCpu[i]
+		}
+
+		// Load Average
+		series[serLoadAverage] = uint64(stats.Cpu.LoadAverage)
 	}
 
-	// Load Average
-	series[serLoadAverage] = uint64(stats.Cpu.LoadAverage)
-
-	// Network stats.
-	series[serRxBytes] = stats.Network.RxBytes
-	series[serRxErrors] = stats.Network.RxErrors
-	series[serTxBytes] = stats.Network.TxBytes
-	series[serTxErrors] = stats.Network.TxErrors
+	if stats.Network != nil {
+		// Network stats.
+		series[serRxBytes] = stats.Network.RxBytes
+		series[serRxErrors] = stats.Network.RxErrors
+		series[serTxBytes] = stats.Network.TxBytes
+		series[serTxErrors] = stats.Network.TxErrors
+	}
 
 	// Referenced Memory
 	series[serReferencedMemory] = stats.ReferencedMemory
@@ -150,6 +159,9 @@ func (driver *stdoutStorage) containerFsStatsToValues(series *map[string]uint64,
 }
 
 func (driver *stdoutStorage) memoryStatsToValues(series *map[string]uint64, stats *info.ContainerStats) {
+	if stats.Memory == nil {
+		return
+	}
 	// Memory Usage
 	(*series)[serMemoryUsage] = stats.Memory.Usage
 	// Maximum memory usage recorded
@@ -164,6 +176,10 @@ func (driver *stdoutStorage) memoryStatsToValues(series *map[string]uint64, stat
 	(*series)[serMemoryMappedFile] = stats.Memory.MappedFile
 	// Working Set Size
 	(*series)[serMemoryWorkingSet] = stats.Memory.WorkingSet
+	// Total Active File
+	(*series)[serMemoryTotalActiveFile] = stats.Memory.TotalActiveFile
+	// Total Inactive File
+	(*series)[serMemoryTotalInactiveFile] = stats.Memory.TotalInactiveFile
 	// Number of memory usage hits limits
 	(*series)[serMemoryFailcnt] = stats.Memory.Failcnt
 

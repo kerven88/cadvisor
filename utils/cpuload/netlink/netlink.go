@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 package netlink
 
 import (
@@ -21,8 +23,9 @@ import (
 	"os"
 	"syscall"
 
-	info "github.com/google/cadvisor/info/v1"
 	"golang.org/x/sys/unix"
+
+	info "github.com/google/cadvisor/info/v1"
 )
 
 var (
@@ -46,7 +49,7 @@ type netlinkMessage struct {
 func (m netlinkMessage) toRawMsg() (rawmsg syscall.NetlinkMessage) {
 	rawmsg.Header = m.Header
 	w := bytes.NewBuffer([]byte{})
-	binary.Write(w, Endian, m.GenHeader)
+	_ = binary.Write(w, Endian, m.GenHeader)
 	w.Write(m.Data)
 	rawmsg.Data = w.Bytes()
 	return rawmsg
@@ -93,13 +96,13 @@ func addAttribute(buf *bytes.Buffer, attrType uint16, data interface{}, dataSize
 		Type: attrType,
 	}
 	attr.Len += uint16(dataSize)
-	binary.Write(buf, Endian, attr)
+	_ = binary.Write(buf, Endian, attr)
 	switch data := data.(type) {
 	case string:
-		binary.Write(buf, Endian, []byte(data))
+		_ = binary.Write(buf, Endian, []byte(data))
 		buf.WriteByte(0) // terminate
 	default:
-		binary.Write(buf, Endian, data)
+		_ = binary.Write(buf, Endian, data)
 	}
 	for i := 0; i < padding(int(attr.Len), syscall.NLMSG_ALIGNTO); i++ {
 		buf.WriteByte(0)
@@ -207,7 +210,7 @@ func verifyHeader(msg syscall.NetlinkMessage) error {
 	case syscall.NLMSG_ERROR:
 		buf := bytes.NewBuffer(msg.Data)
 		var errno int32
-		err := binary.Read(buf, Endian, errno)
+		err := binary.Read(buf, Endian, &errno)
 		if err != nil {
 			return err
 		}

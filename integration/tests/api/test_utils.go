@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 package api
 
 import (
@@ -20,6 +22,7 @@ import (
 
 	info "github.com/google/cadvisor/info/v1"
 
+	"github.com/opencontainers/cgroups"
 	"github.com/stretchr/testify/assert"
 	"k8s.io/klog/v2"
 )
@@ -42,25 +45,34 @@ func inDelta(t *testing.T, expected, actual, delta uint64, description string) {
 }
 
 // Checks that CPU stats are valid.
-func checkCPUStats(t *testing.T, stat info.CpuStats) {
+func checkCPUStats(t *testing.T, stat *info.CpuStats) {
 	assert := assert.New(t)
 
 	assert.NotEqual(0, stat.Usage.Total, "Total CPU usage should not be zero")
-	assert.NotEmpty(stat.Usage.PerCpu, "Per-core usage should not be empty")
-	totalUsage := uint64(0)
-	for _, usage := range stat.Usage.PerCpu {
-		totalUsage += usage
+
+	// PerCPU CPU usage is not supported in cgroupv2 (cpuacct.usage_percpu)
+	// https://github.com/google/cadvisor/issues/3065
+	if !cgroups.IsCgroup2UnifiedMode() {
+		assert.NotEmpty(stat.Usage.PerCpu, "Per-core usage should not be empty")
+
+		totalUsage := uint64(0)
+		for _, usage := range stat.Usage.PerCpu {
+			totalUsage += usage
+		}
+		inDelta(t, stat.Usage.Total, totalUsage, uint64((5 * time.Millisecond).Nanoseconds()), "Per-core CPU usage")
 	}
-	inDelta(t, stat.Usage.Total, totalUsage, uint64((5 * time.Millisecond).Nanoseconds()), "Per-core CPU usage")
+
 	inDelta(t, stat.Usage.Total, stat.Usage.User+stat.Usage.System, uint64((500 * time.Millisecond).Nanoseconds()), "User + system CPU usage")
 	// TODO(rjnagal): Add verification for cpu load.
 }
 
-func checkMemoryStats(t *testing.T, stat info.MemoryStats) {
+func checkMemoryStats(t *testing.T, stat *info.MemoryStats) {
 	assert := assert.New(t)
 
 	assert.NotEqual(0, stat.Usage, "Memory usage should not be zero")
 	assert.NotEqual(0, stat.WorkingSet, "Memory working set should not be zero")
+	assert.NotEqual(0, stat.TotalActiveFile, "Memory total active file should not be zero")
+	assert.NotEqual(0, stat.TotalInactiveFile, "Memory total inactive file should not be zero")
 	if stat.WorkingSet > stat.Usage {
 		t.Errorf("Memory working set (%d) should be at most equal to memory usage (%d)", stat.WorkingSet, stat.Usage)
 	}

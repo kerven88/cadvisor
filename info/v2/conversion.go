@@ -18,8 +18,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/cadvisor/info/v1"
 	"k8s.io/klog/v2"
+
+	v1 "github.com/google/cadvisor/info/v1"
 )
 
 func machineFsStatsFromV1(fsStats []v1.FsStats) []MachineFsStats {
@@ -67,7 +68,7 @@ func MachineStatsFromV1(cont *v1.ContainerInfo) []MachineStats {
 			Timestamp: val.Timestamp,
 		}
 		if cont.Spec.HasCpu {
-			stat.Cpu = &val.Cpu
+			stat.Cpu = val.Cpu
 			cpuInst, err := InstCpuStats(last, val)
 			if err != nil {
 				klog.Warningf("Could not get instant cpu stats: %v", err)
@@ -77,9 +78,9 @@ func MachineStatsFromV1(cont *v1.ContainerInfo) []MachineStats {
 			last = val
 		}
 		if cont.Spec.HasMemory {
-			stat.Memory = &val.Memory
+			stat.Memory = val.Memory
 		}
-		if cont.Spec.HasNetwork {
+		if cont.Spec.HasNetwork && val.Network != nil {
 			stat.Network = &NetworkStats{
 				// FIXME: Use reflection instead.
 				Tcp:        TcpStat(val.Network.Tcp),
@@ -105,7 +106,7 @@ func ContainerStatsFromV1(containerName string, spec *v1.ContainerSpec, stats []
 			ReferencedMemory: val.ReferencedMemory,
 		}
 		if spec.HasCpu {
-			stat.Cpu = &val.Cpu
+			stat.Cpu = val.Cpu
 			cpuInst, err := InstCpuStats(last, val)
 			if err != nil {
 				klog.Warningf("Could not get instant cpu stats: %v", err)
@@ -115,12 +116,12 @@ func ContainerStatsFromV1(containerName string, spec *v1.ContainerSpec, stats []
 			last = val
 		}
 		if spec.HasMemory {
-			stat.Memory = &val.Memory
+			stat.Memory = val.Memory
 		}
 		if spec.HasHugetlb {
 			stat.Hugetlb = &val.Hugetlb
 		}
-		if spec.HasNetwork {
+		if spec.HasNetwork && val.Network != nil {
 			// TODO: Handle TcpStats
 			stat.Network = &NetworkStats{
 				Tcp:        TcpStat(val.Network.Tcp),
@@ -129,7 +130,7 @@ func ContainerStatsFromV1(containerName string, spec *v1.ContainerSpec, stats []
 			}
 		}
 		if spec.HasProcesses {
-			stat.Processes = &val.Processes
+			stat.Processes = val.Processes
 		}
 		if spec.HasFilesystem {
 			if len(val.Filesystem) == 1 {
@@ -144,7 +145,7 @@ func ContainerStatsFromV1(containerName string, spec *v1.ContainerSpec, stats []
 			}
 		}
 		if spec.HasDiskIo {
-			stat.DiskIo = &val.DiskIo
+			stat.DiskIo = val.DiskIo
 		}
 		if spec.HasCustomMetrics {
 			stat.CustomMetrics = val.CustomMetrics
@@ -183,7 +184,7 @@ func DeprecatedStatsFromV1(cont *v1.ContainerInfo) []DeprecatedContainerStats {
 			ReferencedMemory: val.ReferencedMemory,
 		}
 		if stat.HasCpu {
-			stat.Cpu = val.Cpu
+			stat.Cpu = *val.Cpu
 			cpuInst, err := InstCpuStats(last, val)
 			if err != nil {
 				klog.Warningf("Could not get instant cpu stats: %v", err)
@@ -193,22 +194,22 @@ func DeprecatedStatsFromV1(cont *v1.ContainerInfo) []DeprecatedContainerStats {
 			last = val
 		}
 		if stat.HasMemory {
-			stat.Memory = val.Memory
+			stat.Memory = *val.Memory
 		}
 		if stat.HasHugetlb {
 			stat.Hugetlb = val.Hugetlb
 		}
-		if stat.HasNetwork {
+		if stat.HasNetwork && val.Network != nil {
 			stat.Network.Interfaces = val.Network.Interfaces
 		}
 		if stat.HasProcesses {
-			stat.Processes = val.Processes
+			stat.Processes = *val.Processes
 		}
 		if stat.HasFilesystem {
 			stat.Filesystem = val.Filesystem
 		}
 		if stat.HasDiskIo {
-			stat.DiskIo = val.DiskIo
+			stat.DiskIo = *val.DiskIo
 		}
 		if stat.HasCustomMetrics {
 			stat.CustomMetrics = val.CustomMetrics
@@ -284,6 +285,7 @@ func InstCpuStats(last, cur *v1.ContainerStats) (*CpuInstStats, error) {
 func ContainerSpecFromV1(specV1 *v1.ContainerSpec, aliases []string, namespace string) ContainerSpec {
 	specV2 := ContainerSpec{
 		CreationTime:     specV1.CreationTime,
+		StartTime:        specV1.StartTime,
 		HasCpu:           specV1.HasCpu,
 		HasMemory:        specV1.HasMemory,
 		HasHugetlb:       specV1.HasHugetlb,

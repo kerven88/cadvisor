@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build influxdb_test
+//go:build influxdb_test
+
 // To run unit test: go test -tags influxdb_test
 
 package influxdb
@@ -27,7 +28,7 @@ import (
 
 	"github.com/google/cadvisor/cmd/internal/storage/test"
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/storage"
+	"github.com/google/cadvisor/lib/storage"
 
 	influxdb "github.com/influxdb/influxdb/client"
 	"github.com/stretchr/testify/assert"
@@ -70,6 +71,14 @@ func (self *influxDbTestStorageDriver) StatsEq(a, b *info.ContainerStats) bool {
 	}
 
 	if a.Memory.WorkingSet != b.Memory.WorkingSet {
+		return false
+	}
+
+	if a.Memory.TotalActiveFile != b.Memory.TotalActiveFile {
+		return false
+	}
+
+	if a.Memory.TotalInactiveFile != b.Memory.TotalInactiveFile {
 		return false
 	}
 
@@ -251,6 +260,8 @@ func TestContainerStatsToPoints(t *testing.T) {
 	assertContainsPointWithValue(t, points, serMemoryMappedFile, stats.Memory.MappedFile)
 	assertContainsPointWithValue(t, points, serMemoryUsage, stats.Memory.Usage)
 	assertContainsPointWithValue(t, points, serMemoryWorkingSet, stats.Memory.WorkingSet)
+	assertContainsPointWithValue(t, points, serMemoryTotalActiveFile, stats.Memory.TotalActiveFile)
+	assertContainsPointWithValue(t, points, serMemoryTotalInactiveFile, stats.Memory.TotalInactiveFile)
 	assertContainsPointWithValue(t, points, serMemoryFailcnt, stats.Memory.Failcnt)
 	assertContainsPointWithValue(t, points, serMemoryFailure, stats.Memory.ContainerData.Pgfault)
 	assertContainsPointWithValue(t, points, serMemoryFailure, stats.Memory.ContainerData.Pgmajfault)
@@ -344,16 +355,18 @@ func createTestStats() (*info.ContainerInfo, *info.ContainerStats) {
 			LoadAverage: int32(rand.Intn(1000)),
 		},
 		Memory: info.MemoryStats{
-			Usage:            26767396864,
-			MaxUsage:         30429605888,
-			Cache:            7837376512,
-			RSS:              18930020352,
-			Swap:             1024,
-			MappedFile:       1025327104,
-			WorkingSet:       23630012416,
-			Failcnt:          1,
-			ContainerData:    info.MemoryStatsMemoryData{Pgfault: 100328455, Pgmajfault: 97},
-			HierarchicalData: info.MemoryStatsMemoryData{Pgfault: 100328454, Pgmajfault: 96},
+			Usage:             26767396864,
+			MaxUsage:          30429605888,
+			Cache:             7837376512,
+			RSS:               18930020352,
+			Swap:              1024,
+			MappedFile:        1025327104,
+			WorkingSet:        23630012416,
+			TotalActiveFile:   29459246253,
+			TotalInactiveFile: 28364536434,
+			Failcnt:           1,
+			ContainerData:     info.MemoryStatsMemoryData{Pgfault: 100328455, Pgmajfault: 97},
+			HierarchicalData:  info.MemoryStatsMemoryData{Pgfault: 100328454, Pgmajfault: 96},
 		},
 		Hugetlb: map[string]info.HugetlbStats{
 			"1GB": {Usage: 1234, MaxUsage: 5678, Failcnt: 9},

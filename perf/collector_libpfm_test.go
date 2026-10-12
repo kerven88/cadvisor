@@ -1,4 +1,4 @@
-// +build libpfm,cgo
+//go:build libpfm && cgo
 
 // Copyright 2020 Google Inc. All Rights Reserved.
 //
@@ -20,6 +20,7 @@ package perf
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 	"testing"
 	"unsafe"
 
@@ -28,7 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/stats"
+	"github.com/google/cadvisor/lib/stats"
 )
 
 type buffer struct {
@@ -198,6 +199,34 @@ func TestNewCollector(t *testing.T) {
 	assert.Len(t, perfCollector.eventToCustomEvent, 1)
 	assert.Nil(t, perfCollector.eventToCustomEvent[Event("event_1")])
 	assert.Same(t, &perfCollector.events.Core.CustomEvents[0], perfCollector.eventToCustomEvent[Event("event_2")])
+}
+
+func TestCollectorSetup(t *testing.T) {
+	path, err := os.MkdirTemp("", "cgroup")
+	assert.Nil(t, err)
+	defer func() {
+		err := os.RemoveAll(path)
+		assert.Nil(t, err)
+	}()
+	events := PerfEvents{
+		Core: Events{
+			Events: []Group{
+				{[]Event{"cache-misses"}, false},
+				{[]Event{"non-existing-event"}, false},
+			},
+		},
+	}
+	c := newCollector(path, events, []int{0}, map[int]int{0: 0})
+	c.perfEventOpen = func(attr *unix.PerfEventAttr, pid int, cpu int, groupFd int, flags int) (fd int, err error) {
+		return int(attr.Config), nil
+	}
+	c.ioctlSetInt = func(fd int, req uint, value int) error {
+		return nil
+	}
+	err = c.setup()
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(c.cpuFiles))
+	assert.Equal(t, []string{"cache-misses"}, c.cpuFiles[0].names)
 }
 
 var readGroupPerfStatCases = []struct {

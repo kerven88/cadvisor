@@ -12,39 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 // Handler for Docker containers.
 package docker
 
 import (
-	"io/ioutil"
+	"context"
 	"os"
 	"path"
 	"strings"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
+	dclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/google/cadvisor/fs"
 	info "github.com/google/cadvisor/info/v1"
+	"github.com/google/cadvisor/lib/fs"
 )
+
+type mockDockerClientForExitCode struct {
+	dclient.APIClient
+	inspectResp dclient.ContainerInspectResult
+	inspectErr  error
+}
+
+func (m *mockDockerClientForExitCode) ContainerInspect(ctx context.Context, containerID string, options dclient.ContainerInspectOptions) (dclient.ContainerInspectResult, error) {
+	return m.inspectResp, m.inspectErr
+}
 
 func TestStorageDirDetectionWithOldVersions(t *testing.T) {
 	as := assert.New(t)
-	rwLayer, err := getRwLayerID("abcd", "/", aufsStorageDriver, []int{1, 9, 0})
+	rwLayer, err := getRwLayerID("abcd", "/", AufsStorageDriver, []int{1, 9, 0})
 	as.Nil(err)
 	as.Equal(rwLayer, "abcd")
 }
 
 func TestStorageDirDetectionWithNewVersions(t *testing.T) {
 	as := assert.New(t)
-	testDir, err := ioutil.TempDir("", "")
-	as.Nil(err)
+	testDir := t.TempDir()
 	containerID := "abcd"
 	randomizedID := "xyz"
 	randomIDPath := path.Join(testDir, "image/aufs/layerdb/mounts/", containerID)
 	as.Nil(os.MkdirAll(randomIDPath, os.ModePerm))
-	as.Nil(ioutil.WriteFile(path.Join(randomIDPath, "mount-id"), []byte(randomizedID), os.ModePerm))
+	as.Nil(os.WriteFile(path.Join(randomIDPath, "mount-id"), []byte(randomizedID), os.ModePerm))
 	rwLayer, err := getRwLayerID(containerID, testDir, "aufs", []int{1, 10, 0})
 	as.Nil(err)
 	as.Equal(rwLayer, randomizedID)
@@ -55,11 +67,11 @@ func TestStorageDirDetectionWithNewVersions(t *testing.T) {
 }
 
 func rawMetadataEnvMatch(dockerEnvWhiteList string, cntConfig container.Config) map[string]string {
-	metadataEnvs := strings.Split(dockerEnvWhiteList, ",")
+	metadataEnvAllowList := strings.Split(dockerEnvWhiteList, ",")
 	handlerEnvs := make(map[string]string)
 
 	// split env vars to get metadata map.
-	for _, exposedEnv := range metadataEnvs {
+	for _, exposedEnv := range metadataEnvAllowList {
 		for _, envVar := range cntConfig.Env {
 			if envVar != "" {
 				splits := strings.SplitN(envVar, "=", 2)
@@ -74,13 +86,13 @@ func rawMetadataEnvMatch(dockerEnvWhiteList string, cntConfig container.Config) 
 }
 
 func newMetadataEnvMatch(dockerEnvWhiteList string, cntConfig container.Config) map[string]string {
-	metadataEnvs := strings.Split(dockerEnvWhiteList, ",")
+	metadataEnvAllowList := strings.Split(dockerEnvWhiteList, ",")
 	handlerEnvs := make(map[string]string)
 
 	// split env vars to get metadata map.
-	for _, exposedEnv := range metadataEnvs {
+	for _, exposedEnv := range metadataEnvAllowList {
 		if exposedEnv == "" {
-			// if no dockerEnvWhitelist provided, len(metadataEnvs) == 1, metadataEnvs[0] == ""
+			// if no dockerEnvWhitelist provided, len(metadataEnvAllowList) == 1, metadataEnvAllowList[0] == ""
 			continue
 		}
 
@@ -219,4 +231,89 @@ func TestAddDiskStats(t *testing.T) {
 	as.Equal(ioInProgress, fileSystem.DiskStats.IoInProgress, "IoInProgress metric should be %d but was %d", ioInProgress, fileSystem.DiskStats.IoInProgress)
 	as.Equal(ioTime, fileSystem.DiskStats.IoTime, "IoTime metric should be %d but was %d", ioTime, fileSystem.DiskStats.IoTime)
 	as.Equal(weightedIoTime, fileSystem.DiskStats.WeightedIoTime, "WeightedIoTime metric should be %d but was %d", weightedIoTime, fileSystem.DiskStats.WeightedIoTime)
+}
+
+func TestGetExitCode(t *testing.T) {
+	tests := []struct {
+		name         string
+		running      bool
+		exitCode     int
+		inspectErr   error
+		expectErr    bool
+		errContains  string
+		expectedCode int
+	}{
+		{
+			name:         "successful exit code 0",
+			running:      false,
+			exitCode:     0,
+			inspectErr:   nil,
+			expectErr:    false,
+			expectedCode: 0,
+		},
+		{
+			name:         "successful exit code 1",
+			running:      false,
+			exitCode:     1,
+			inspectErr:   nil,
+			expectErr:    false,
+			expectedCode: 1,
+		},
+		{
+			name:         "container still running",
+			running:      true,
+			exitCode:     0,
+			inspectErr:   nil,
+			expectErr:    true,
+			errContains:  "still running",
+			expectedCode: -1,
+		},
+		{
+			name:         "inspect fails",
+			running:      false,
+			exitCode:     0,
+			inspectErr:   assert.AnError,
+			expectErr:    true,
+			errContains:  "failed to inspect",
+			expectedCode: -1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			as := assert.New(t)
+
+			mockClient := &mockDockerClientForExitCode{
+				inspectResp: dclient.ContainerInspectResult{
+					Container: container.InspectResponse{
+						State: &container.State{
+							Running:  tt.running,
+							ExitCode: tt.exitCode,
+						},
+					},
+				},
+				inspectErr: tt.inspectErr,
+			}
+
+			h := &containerHandler{
+				client: mockClient,
+				reference: info.ContainerReference{
+					Id: "test-container-id",
+				},
+			}
+
+			code, err := h.GetExitCode()
+
+			if tt.expectErr {
+				as.Error(err)
+				if tt.errContains != "" {
+					as.Contains(err.Error(), tt.errContains)
+				}
+				as.Equal(tt.expectedCode, code)
+			} else {
+				as.NoError(err)
+				as.Equal(tt.expectedCode, code)
+			}
+		})
+	}
 }

@@ -23,26 +23,26 @@ import (
 
 	info "github.com/google/cadvisor/info/v1"
 	v2 "github.com/google/cadvisor/info/v2"
-	"github.com/google/cadvisor/manager"
+	"github.com/google/cadvisor/lib/manager"
 
 	"k8s.io/klog/v2"
 )
 
 const (
-	containersApi    = "containers"
-	subcontainersApi = "subcontainers"
-	machineApi       = "machine"
-	machineStatsApi  = "machinestats"
-	dockerApi        = "docker"
-	summaryApi       = "summary"
-	statsApi         = "stats"
-	specApi          = "spec"
-	eventsApi        = "events"
-	storageApi       = "storage"
-	attributesApi    = "attributes"
-	versionApi       = "version"
-	psApi            = "ps"
-	customMetricsApi = "appmetrics"
+	containersAPI    = "containers"
+	subcontainersAPI = "subcontainers"
+	machineAPI       = "machine"
+	machineStatsAPI  = "machinestats"
+	dockerAPI        = "docker"
+	summaryAPI       = "summary"
+	statsAPI         = "stats"
+	specAPI          = "spec"
+	eventsAPI        = "events"
+	storageAPI       = "storage"
+	attributesAPI    = "attributes"
+	versionAPI       = "version"
+	psAPI            = "ps"
+	customMetricsAPI = "appmetrics"
 )
 
 // Interface for a cAdvisor API version
@@ -58,7 +58,7 @@ type ApiVersion interface {
 }
 
 // Gets all supported API versions.
-func getApiVersions() []ApiVersion {
+func getAPIVersions() []ApiVersion {
 	v1_0 := &version1_0{}
 	v1_1 := newVersion1_1(v1_0)
 	v1_2 := newVersion1_2(v1_1)
@@ -80,12 +80,12 @@ func (api *version1_0) Version() string {
 }
 
 func (api *version1_0) SupportedRequestTypes() []string {
-	return []string{containersApi, machineApi}
+	return []string{containersAPI, machineAPI}
 }
 
 func (api *version1_0) HandleRequest(requestType string, request []string, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	switch requestType {
-	case machineApi:
+	case machineAPI:
 		klog.V(4).Infof("Api - Machine")
 
 		// Get the MachineInfo
@@ -98,7 +98,7 @@ func (api *version1_0) HandleRequest(requestType string, request []string, m man
 		if err != nil {
 			return err
 		}
-	case containersApi:
+	case containersAPI:
 		containerName := getContainerName(request)
 		klog.V(4).Infof("Api - Container(%s)", containerName)
 
@@ -143,12 +143,12 @@ func (api *version1_1) Version() string {
 }
 
 func (api *version1_1) SupportedRequestTypes() []string {
-	return append(api.baseVersion.SupportedRequestTypes(), subcontainersApi)
+	return append(api.baseVersion.SupportedRequestTypes(), subcontainersAPI)
 }
 
 func (api *version1_1) HandleRequest(requestType string, request []string, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	switch requestType {
-	case subcontainersApi:
+	case subcontainersAPI:
 		containerName := getContainerName(request)
 		klog.V(4).Infof("Api - Subcontainers(%s)", containerName)
 
@@ -193,12 +193,12 @@ func (api *version1_2) Version() string {
 }
 
 func (api *version1_2) SupportedRequestTypes() []string {
-	return append(api.baseVersion.SupportedRequestTypes(), dockerApi)
+	return append(api.baseVersion.SupportedRequestTypes(), dockerAPI)
 }
 
 func (api *version1_2) HandleRequest(requestType string, request []string, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	switch requestType {
-	case dockerApi:
+	case dockerAPI:
 		klog.V(4).Infof("Api - Docker(%v)", request)
 
 		// Get the query request.
@@ -262,12 +262,12 @@ func (api *version1_3) Version() string {
 }
 
 func (api *version1_3) SupportedRequestTypes() []string {
-	return append(api.baseVersion.SupportedRequestTypes(), eventsApi)
+	return append(api.baseVersion.SupportedRequestTypes(), eventsAPI)
 }
 
 func (api *version1_3) HandleRequest(requestType string, request []string, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	switch requestType {
-	case eventsApi:
+	case eventsAPI:
 		return handleEventRequest(request, m, w, r)
 	default:
 		return api.baseVersion.HandleRequest(requestType, request, m, w, r)
@@ -282,13 +282,13 @@ func handleEventRequest(request []string, m manager.Manager, w http.ResponseWrit
 	query.ContainerName = path.Join("/", getContainerName(request))
 	klog.V(4).Infof("Api - Events(%v)", query)
 	if !stream {
-		pastEvents, err := m.GetPastEvents(query)
+		pastEvents, err := eventManager.GetEvents(query)
 		if err != nil {
 			return err
 		}
 		return writeResult(pastEvents, w)
 	}
-	eventChannel, err := m.WatchForEvents(query)
+	eventChannel, err := eventManager.WatchEvents(query)
 	if err != nil {
 		return err
 	}
@@ -310,7 +310,7 @@ func (api *version2_0) Version() string {
 }
 
 func (api *version2_0) SupportedRequestTypes() []string {
-	return []string{versionApi, attributesApi, eventsApi, machineApi, summaryApi, statsApi, specApi, storageApi, psApi, customMetricsApi}
+	return []string{versionAPI, attributesAPI, eventsAPI, machineAPI, summaryAPI, statsAPI, specAPI, storageAPI, psAPI, customMetricsAPI}
 }
 
 func (api *version2_0) HandleRequest(requestType string, request []string, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
@@ -319,14 +319,14 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 		return err
 	}
 	switch requestType {
-	case versionApi:
+	case versionAPI:
 		klog.V(4).Infof("Api - Version")
 		versionInfo, err := m.GetVersionInfo()
 		if err != nil {
 			return err
 		}
 		return writeResult(versionInfo.CadvisorVersion, w)
-	case attributesApi:
+	case attributesAPI:
 		klog.V(4).Info("Api - Attributes")
 
 		machineInfo, err := m.GetMachineInfo()
@@ -339,7 +339,7 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 		}
 		info := v2.GetAttributes(machineInfo, versionInfo)
 		return writeResult(info, w)
-	case machineApi:
+	case machineAPI:
 		klog.V(4).Info("Api - Machine")
 
 		// TODO(rjnagal): Move machineInfo from v1.
@@ -348,7 +348,7 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 			return err
 		}
 		return writeResult(machineInfo, w)
-	case summaryApi:
+	case summaryAPI:
 		containerName := getContainerName(request)
 		klog.V(4).Infof("Api - Summary for container %q, options %+v", containerName, opt)
 
@@ -357,7 +357,7 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 			return err
 		}
 		return writeResult(stats, w)
-	case statsApi:
+	case statsAPI:
 		name := getContainerName(request)
 		klog.V(4).Infof("Api - Stats: Looking for stats for container %q, options %+v", name, opt)
 		infos, err := m.GetRequestedContainersInfo(name, opt)
@@ -367,27 +367,27 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 			}
 			klog.Errorf("Error calling GetRequestedContainersInfo: %v", err)
 		}
-		contStats := make(map[string][]v2.DeprecatedContainerStats, 0)
+		contStats := make(map[string][]v2.DeprecatedContainerStats)
 		for name, cinfo := range infos {
 			contStats[name] = v2.DeprecatedStatsFromV1(cinfo)
 		}
 		return writeResult(contStats, w)
-	case customMetricsApi:
+	case customMetricsAPI:
 		containerName := getContainerName(request)
 		klog.V(4).Infof("Api - Custom Metrics: Looking for metrics for container %q, options %+v", containerName, opt)
 		infos, err := m.GetContainerInfoV2(containerName, opt)
 		if err != nil {
 			return err
 		}
-		contMetrics := make(map[string]map[string]map[string][]info.MetricValBasic, 0)
+		contMetrics := make(map[string]map[string]map[string][]info.MetricValBasic)
 		for _, cinfo := range infos {
-			metrics := make(map[string]map[string][]info.MetricValBasic, 0)
+			metrics := make(map[string]map[string][]info.MetricValBasic)
 			for _, contStat := range cinfo.Stats {
 				if len(contStat.CustomMetrics) == 0 {
 					continue
 				}
 				for name, allLabels := range contStat.CustomMetrics {
-					metricLabels := make(map[string][]info.MetricValBasic, 0)
+					metricLabels := make(map[string][]info.MetricValBasic)
 					for _, metric := range allLabels {
 						if !metric.Timestamp.IsZero() {
 							metVal := info.MetricValBasic{
@@ -412,15 +412,22 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 			contMetrics[containerName] = metrics
 		}
 		return writeResult(contMetrics, w)
-	case specApi:
+	case specAPI:
 		containerName := getContainerName(request)
 		klog.V(4).Infof("Api - Spec for container %q, options %+v", containerName, opt)
-		specs, err := m.GetContainerSpec(containerName, opt)
+		// The library manager returns model specs; convert each to the v2 shape
+		// (adding aliases/namespace from the container reference) so /api/v2.0/spec
+		// serves byte-exact v2.ContainerSpec.
+		infos, err := m.GetContainerInfoV2(containerName, opt)
 		if err != nil {
 			return err
 		}
+		specs := make(map[string]v2.ContainerSpec, len(infos))
+		for name, cinfo := range infos {
+			specs[name] = v2.ContainerSpecFromV1(&cinfo.Spec, cinfo.Aliases, cinfo.Namespace)
+		}
 		return writeResult(specs, w)
-	case storageApi:
+	case storageAPI:
 		label := r.URL.Query().Get("label")
 		uuid := r.URL.Query().Get("uuid")
 		switch {
@@ -445,9 +452,9 @@ func (api *version2_0) HandleRequest(requestType string, request []string, m man
 			}
 			return writeResult(fi, w)
 		}
-	case eventsApi:
+	case eventsAPI:
 		return handleEventRequest(request, m, w, r)
-	case psApi:
+	case psAPI:
 		// reuse container type from request.
 		// ignore recursive.
 		// TODO(rjnagal): consider count to limit ps output.
@@ -478,7 +485,7 @@ func (api *version2_1) Version() string {
 }
 
 func (api *version2_1) SupportedRequestTypes() []string {
-	return append([]string{machineStatsApi}, api.baseVersion.SupportedRequestTypes()...)
+	return append([]string{machineStatsAPI}, api.baseVersion.SupportedRequestTypes()...)
 }
 
 func (api *version2_1) HandleRequest(requestType string, request []string, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
@@ -489,7 +496,7 @@ func (api *version2_1) HandleRequest(requestType string, request []string, m man
 	}
 
 	switch requestType {
-	case machineStatsApi:
+	case machineStatsAPI:
 		klog.V(4).Infof("Api - MachineStats(%v)", request)
 		cont, err := m.GetRequestedContainersInfo("/", opt)
 		if err != nil {
@@ -499,7 +506,7 @@ func (api *version2_1) HandleRequest(requestType string, request []string, m man
 			klog.Errorf("Error calling GetRequestedContainersInfo: %v", err)
 		}
 		return writeResult(v2.MachineStatsFromV1(cont["/"]), w)
-	case statsApi:
+	case statsAPI:
 		name := getContainerName(request)
 		klog.V(4).Infof("Api - Stats: Looking for stats for container %q, options %+v", name, opt)
 		conts, err := m.GetRequestedContainersInfo(name, opt)
@@ -531,6 +538,7 @@ func GetRequestOptions(r *http.Request) (v2.RequestOptions, error) {
 	supportedTypes := map[string]bool{
 		v2.TypeName:   true,
 		v2.TypeDocker: true,
+		v2.TypePodman: true,
 	}
 	// fill in the defaults.
 	opt := v2.RequestOptions{
@@ -547,11 +555,14 @@ func GetRequestOptions(r *http.Request) (v2.RequestOptions, error) {
 	}
 	count := r.URL.Query().Get("count")
 	if len(count) != 0 {
-		n, err := strconv.ParseUint(count, 10, 32)
+		n, err := strconv.Atoi(count)
 		if err != nil {
 			return opt, fmt.Errorf("failed to parse 'count' option: %v", count)
 		}
-		opt.Count = int(n)
+		if n < -1 {
+			return opt, fmt.Errorf("invalid 'count' option: only -1 and larger values allowed, not %d", n)
+		}
+		opt.Count = n
 	}
 	recursive := r.URL.Query().Get("recursive")
 	if recursive == "true" {

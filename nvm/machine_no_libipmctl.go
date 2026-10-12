@@ -1,4 +1,4 @@
-// +build !libipmctl !cgo
+//go:build !libipmctl || !cgo
 
 // Copyright 2020 Google Inc. All Rights Reserved.
 //
@@ -17,8 +17,9 @@
 package nvm
 
 import (
-	info "github.com/google/cadvisor/info/v1"
 	"k8s.io/klog/v2"
+
+	info "github.com/google/cadvisor/info/v1"
 )
 
 // GetInfo returns information specific for non-volatile memory modules.

@@ -11,7 +11,7 @@ cAdvisor has native support for [Docker](https://github.com/docker/docker) conta
 To quickly tryout cAdvisor on your machine with Docker, we have a Docker image that includes everything you need to get started. You can run a single cAdvisor to monitor the whole machine. Simply run:
 
 ```
-VERSION=v0.36.0 # use the latest release version from https://github.com/google/cadvisor/releases
+VERSION=0.55.1 # use the latest release version from https://github.com/google/cadvisor/releases
 sudo docker run \
   --volume=/:/rootfs:ro \
   --volume=/var/run:/var/run:ro \
@@ -23,7 +23,7 @@ sudo docker run \
   --name=cadvisor \
   --privileged \
   --device=/dev/kmsg \
-  gcr.io/cadvisor/cadvisor:$VERSION
+  ghcr.io/google/cadvisor:$VERSION # for versions prior to v0.53.0, use gcr.io/cadvisor/cadvisor instead
 ```
 
 cAdvisor is now running (in the background) on `http://localhost:8080`. The setup includes directories with Docker state cAdvisor needs to observe.
@@ -67,3 +67,20 @@ cAdvisor aims to improve the resource usage and performance characteristics of r
 ## Community
 
 Contributions, questions, and comments are all welcomed and encouraged! cAdvisor developers hang out on [Slack](https://kubernetes.slack.com) in the #sig-node channel (get an invitation [here](http://slack.kubernetes.io/)). We also have [discuss.kubernetes.io](https://discuss.kubernetes.io/).
+
+Please reach out and get involved in the project, we're actively looking for more contributors to bring on board!
+
+### Core Team
+* [@bobbypage, Google](https://github.com/bobbypage)
+* [@iwankgb, Independent](https://github.com/iwankgb)
+* [@creatone, Independent](https://github.com/creatone)
+* [@dims, VMWare](https://github.com/dims)
+* [@mrunalp, RedHat](https://github.com/mrunalp)
+
+### Frequent Collaborators
+* [@haircommander, RedHat](https://github.com/haircommander)
+
+### Emeritus
+* [@dashpole, Google](https://github.com/dashpole)
+* [@dchen1107, Google](https://github.com/dchen1107)
+* [@derekwaynecarr, RedHat](https://github.com/derekwaynecarr)

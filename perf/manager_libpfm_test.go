@@ -1,4 +1,4 @@
-// +build libpfm,cgo
+//go:build libpfm && cgo
 
 // Copyright 2020 Google Inc. All Rights Reserved.
 //
@@ -23,8 +23,15 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/stats"
+	"github.com/google/cadvisor/lib/stats"
 )
+
+func TestEmptyConfigPassed(t *testing.T) {
+	manager, err := NewManager("testing/perf-no-events.json", []info.Node{})
+
+	assert.NotNil(t, err)
+	assert.Nil(t, manager)
+}
 
 func TestNoConfigFilePassed(t *testing.T) {
 	manager, err := NewManager("", []info.Node{})

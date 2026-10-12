@@ -17,9 +17,14 @@ package utils
 import (
 	"fmt"
 	"os"
+	"path"
+	"regexp"
 	"strings"
 
-	dockertypes "github.com/docker/docker/api/types"
+	dockerimage "github.com/moby/moby/api/types/image"
+	dockersystem "github.com/moby/moby/api/types/system"
+
+	v1 "github.com/google/cadvisor/info/v1"
 )
 
 const (
@@ -27,6 +32,10 @@ const (
 	DriverStatusMetadataFile  = "Metadata file"
 	DriverStatusParentDataset = "Parent Dataset"
 )
+
+// Regexp that identifies docker cgroups, containers started with
+// --cgroup-parent have another prefix than 'docker'
+var cgroupRegexp = regexp.MustCompile(`([a-z0-9]{64})`)
 
 func DriverStatusValue(status [][2]string, target string) string {
 	for _, v := range status {
@@ -38,16 +47,16 @@ func DriverStatusValue(status [][2]string, target string) string {
 	return ""
 }
 
-func DockerThinPoolName(info dockertypes.Info) (string, error) {
+func DockerThinPoolName(info dockersystem.Info) (string, error) {
 	poolName := DriverStatusValue(info.DriverStatus, DriverStatusPoolName)
 	if len(poolName) == 0 {
-		return "", fmt.Errorf("Could not get devicemapper pool name")
+		return "", fmt.Errorf("could not get devicemapper pool name")
 	}
 
 	return poolName, nil
 }
 
-func DockerMetadataDevice(info dockertypes.Info) (string, error) {
+func DockerMetadataDevice(info dockersystem.Info) (string, error) {
 	metadataDevice := DriverStatusValue(info.DriverStatus, DriverStatusMetadataFile)
 	if len(metadataDevice) != 0 {
 		return metadataDevice, nil
@@ -67,11 +76,52 @@ func DockerMetadataDevice(info dockertypes.Info) (string, error) {
 	return metadataDevice, nil
 }
 
-func DockerZfsFilesystem(info dockertypes.Info) (string, error) {
+func DockerZfsFilesystem(info dockersystem.Info) (string, error) {
 	filesystem := DriverStatusValue(info.DriverStatus, DriverStatusParentDataset)
 	if len(filesystem) == 0 {
-		return "", fmt.Errorf("Could not get zfs filesystem")
+		return "", fmt.Errorf("could not get zfs filesystem")
 	}
 
 	return filesystem, nil
+}
+
+func SummariesToImages(summaries []dockerimage.Summary) ([]v1.DockerImage, error) {
+	var out []v1.DockerImage
+	const unknownTag = "<none>:<none>"
+	for _, summary := range summaries {
+		if len(summary.RepoTags) == 1 && summary.RepoTags[0] == unknownTag {
+			// images with repo or tags are uninteresting.
+			continue
+		}
+		di := v1.DockerImage{
+			ID:          summary.ID,
+			RepoTags:    summary.RepoTags,
+			Created:     summary.Created,
+			VirtualSize: summary.Size,
+			Size:        summary.Size,
+		}
+		out = append(out, di)
+	}
+	return out, nil
+}
+
+// ContainerNameToId returns the ID from the full container name.
+func ContainerNameToId(name string) string {
+	id := path.Base(name)
+
+	if matches := cgroupRegexp.FindStringSubmatch(id); matches != nil {
+		return matches[1]
+	}
+
+	return id
+}
+
+// IsContainerName returns true if the cgroup with associated name
+// corresponds to a container.
+func IsContainerName(name string) bool {
+	// always ignore .mount cgroup even if associated with docker and delegate to systemd
+	if strings.HasSuffix(name, ".mount") {
+		return false
+	}
+	return cgroupRegexp.MatchString(path.Base(name))
 }

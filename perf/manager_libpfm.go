@@ -1,4 +1,4 @@
-// +build libpfm,cgo
+//go:build libpfm && cgo
 
 // Copyright 2020 Google Inc. All Rights Reserved.
 //
@@ -22,8 +22,8 @@ import (
 	"os"
 
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/stats"
-	"github.com/google/cadvisor/utils/sysinfo"
+	"github.com/google/cadvisor/lib/stats"
+	"github.com/google/cadvisor/lib/utils/sysinfo"
 )
 
 type manager struct {
@@ -46,6 +46,10 @@ func NewManager(configFile string, topology []info.Node) (stats.Manager, error) 
 	config, err := parseConfig(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse configuration file %q: %w", configFile, err)
+	}
+
+	if len(config.Core.Events) == 0 && len(config.Uncore.Events) == 0 {
+		return nil, fmt.Errorf("there is no events in config file %q", configFile)
 	}
 
 	onlineCPUs := sysinfo.GetOnlineCPUs(topology)

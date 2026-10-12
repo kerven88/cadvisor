@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 // The install package registers docker.NewPlugin() as the "docker" container provider when imported
 package install
 
 import (
-	"github.com/google/cadvisor/container"
-	"github.com/google/cadvisor/container/docker"
 	"k8s.io/klog/v2"
+
+	"github.com/google/cadvisor/container/docker"
+	"github.com/google/cadvisor/lib/container"
 )
 
 func init() {

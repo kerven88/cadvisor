@@ -1,7 +1,8 @@
-FROM alpine:3.12 AS build
+FROM registry.hub.docker.com/library/golang:1.25-alpine3.23 AS build
 
-RUN apk --no-cache add libc6-compat device-mapper findutils zfs build-base linux-headers go python3 bash git wget cmake pkgconfig ndctl-dev && \
-    apk --no-cache add thin-provisioning-tools --repository http://dl-3.alpinelinux.org/alpine/edge/main/ && \
+# Install build depdencies for all supported arches
+RUN apk --no-cache add bash build-base cmake device-mapper findutils git \
+                       libc6-compat linux-headers ndctl-dev pkgconfig python3 thin-provisioning-tools wget zfs && \
     echo 'hosts: files mdns4_minimal [NOTFOUND=return] dns mdns4' >> /etc/nsswitch.conf && \
     rm -rf /var/cache/apk/*
 
@@ -14,41 +15,67 @@ RUN export DBG="-g -Wall" && \
   make -e -C libpfm-4.11.0 && \
   make install -C libpfm-4.11.0
 
-RUN git clone -b v02.00.00.3820 https://github.com/intel/ipmctl/ && \
-    cd ipmctl && \
-    mkdir output && \
-    cd output && \
-    cmake -DRELEASE=ON -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=/usr/local/lib .. && \
-    make -j all && \
-    make install
+# ipmctl only supports Intel x86_64 processors.
+# https://github.com/intel/ipmctl/issues/163
 
-ADD . /go/src/github.com/google/cadvisor
+# Disable libipmctl due to https://github.com/google/cadvisor/issues/3482
+#RUN if [ "$(uname --machine)" = "x86_64" ]; then \
+    #git clone -b v02.00.00.3885 https://github.com/intel/ipmctl/ && \
+    #cd ipmctl && \
+    #mkdir output && \
+    #cd output && \
+    #cmake -DRELEASE=ON -DCMAKE_INSTALL_PREFIX=/ -DCMAKE_INSTALL_LIBDIR=/usr/local/lib .. && \
+    #make -j all && \
+    #make install; fi
+
 WORKDIR /go/src/github.com/google/cadvisor
 
-ENV GOROOT /usr/lib/go
-ENV GOPATH /go
-ENV GO_FLAGS="-tags=libpfm,netgo,libipmctl"
+# Cache Golang Dependencies for faster incremental builds
+ADD go.mod go.sum ./
+ADD lib/go.mod lib/go.sum ./lib/
+RUN go mod download
+ADD cmd/go.mod cmd/go.sum ./cmd/
+RUN cd cmd && go mod download
 
-RUN ./build/build.sh
+ADD . .
 
-FROM alpine:3.12
+ARG VERSION
+
+# libipmctl only works on x86_64 CPUs.
+RUN export GO_TAGS="libpfm,netgo"; \
+    if [ "$(uname --machine)" = "x86_64" ]; then \
+          # Disable libipmctl due to https://github.com/google/cadvisor/issues/3482
+          #export GO_TAGS="$GO_TAGS,libipmctl"; \
+          export GO_TAGS="$GO_TAGS"; \
+    fi; \
+    GO_FLAGS="-tags=$GO_TAGS" ./build/build.sh
+
+FROM mirror.gcr.io/library/alpine:3.23
 MAINTAINER dengnan@google.com vmarmol@google.com vishnuk@google.com jimmidyson@gmail.com stclair@google.com
 
-RUN apk --no-cache add libc6-compat device-mapper findutils zfs ndctl && \
-    apk --no-cache add thin-provisioning-tools --repository http://dl-3.alpinelinux.org/alpine/edge/main/ && \
+RUN apk --no-cache add libc6-compat device-mapper findutils ndctl thin-provisioning-tools zfs && \
     echo 'hosts: files mdns4_minimal [NOTFOUND=return] dns mdns4' >> /etc/nsswitch.conf && \
     rm -rf /var/cache/apk/*
 
-# Grab cadvisor,libpfm4 and libipmctl from "build" container.
+# Grab cadvisor,libpfm4 and libipmctl from "build" container if they exist (libipmctl only works on amd64/x86_64).
 COPY --from=build /usr/local/lib/libpfm.so* /usr/local/lib/
-COPY --from=build /usr/local/lib/libipmctl.so* /usr/local/lib/
-COPY --from=build /go/src/github.com/google/cadvisor/cadvisor /usr/bin/cadvisor
+# Disable libipmctl due to https://github.com/google/cadvisor/issues/3482
+#COPY --from=build /usr/local/lib/libipmctl.so* /usr/local/lib/
+COPY --from=build /go/src/github.com/google/cadvisor/_output/cadvisor /usr/bin/cadvisor
 
+COPY deploy/entrypoint.sh /usr/bin/entrypoint.sh
+RUN chmod +x /usr/bin/entrypoint.sh
+
+COPY deploy/healthcheck.sh /usr/bin/healthcheck.sh
+RUN chmod +x /usr/bin/healthcheck.sh
+
+# Default port is 8080, but can be changed with -port flag
+# Users should expose their custom port with: docker run -p <custom>:<custom>
 EXPOSE 8080
 
-ENV CADVISOR_HEALTHCHECK_URL=http://localhost:8080/healthz
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s \
+  CMD /usr/bin/healthcheck.sh
 
-HEALTHCHECK --interval=30s --timeout=3s \
-  CMD wget --quiet --tries=1 --spider $CADVISOR_HEALTHCHECK_URL || exit 1
+# Use entrypoint wrapper
+ENTRYPOINT ["/usr/bin/entrypoint.sh"]
 
-ENTRYPOINT ["/usr/bin/cadvisor", "-logtostderr"]

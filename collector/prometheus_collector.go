@@ -27,8 +27,8 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
-	"github.com/google/cadvisor/container"
-	"github.com/google/cadvisor/info/v1"
+	v1 "github.com/google/cadvisor/info/v1"
+	"github.com/google/cadvisor/lib/container"
 )
 
 type PrometheusCollector struct {
@@ -72,7 +72,7 @@ func NewPrometheusCollector(collectorName string, configFile []byte, metricCount
 	}
 
 	if metricCountLimit < 0 {
-		return nil, fmt.Errorf("Metric count limit must be greater than or equal to 0")
+		return nil, fmt.Errorf("metric count limit must be greater than or equal to 0")
 	}
 
 	var metricsSet map[string]bool
@@ -84,7 +84,7 @@ func NewPrometheusCollector(collectorName string, configFile []byte, metricCount
 	}
 
 	if len(configInJSON.MetricsConfig) > metricCountLimit {
-		return nil, fmt.Errorf("Too many metrics defined: %d limit %d", len(configInJSON.MetricsConfig), metricCountLimit)
+		return nil, fmt.Errorf("too many metrics defined: %d limit %d", len(configInJSON.MetricsConfig), metricCountLimit)
 	}
 
 	// TODO : Add checks for validity of config file (eg : Accurate JSON fields)

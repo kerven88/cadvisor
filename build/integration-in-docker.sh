@@ -26,23 +26,25 @@ function delete() {
     rm -rf "${TMPDIR}"
   fi
 }
-trap delete EXIT INT
+trap delete EXIT INT TERM
 
 function run_tests() {
-  BUILD_CMD="env GOOS=linux GO_FLAGS='$GO_FLAGS' ./build/build.sh amd64 && \
+
+  # Add safe.directory as workaround for https://github.com/actions/runner/issues/2033
+  BUILD_CMD="git config --global safe.directory /go/src/github.com/google/cadvisor && env GOOS=linux GOARCH=amd64 GO_FLAGS='$GO_FLAGS' ./build/build.sh && \
     env GOOS=linux GOFLAGS='$GO_FLAGS' go test -c github.com/google/cadvisor/integration/tests/api && \
-    env GOOS=linux GOFLAGS='$GO_FLAGS' go test -c github.com/google/cadvisor/integration/tests/healthz"
+    env GOOS=linux GOFLAGS='$GO_FLAGS' go test -c github.com/google/cadvisor/integration/tests/common && \
+    env GOOS=linux GOFLAGS='$GO_FLAGS' go test -c github.com/google/cadvisor/integration/tests/metrics"
 
   if [ "$BUILD_PACKAGES" != "" ]; then
-    BUILD_CMD="echo 'deb http://deb.debian.org/debian buster-backports main'>/etc/apt/sources.list.d/buster.list && \
-    apt update && \
-    apt install -y -t buster-backports $BUILD_PACKAGES && \
+    BUILD_CMD="apt update && apt install -y $BUILD_PACKAGES && \
     $BUILD_CMD"
   fi
   docker run --rm \
+    --platform linux/amd64 \
     -w /go/src/github.com/google/cadvisor \
     -v ${PWD}:/go/src/github.com/google/cadvisor \
-    golang:"$GOLANG_VERSION-buster" \
+    golang:"$GOLANG_VERSION-$DEBIAN_VERSION" \
     bash -c "$BUILD_CMD"
 
   EXTRA_DOCKER_OPTS="-e DOCKER_IN_DOCKER_ENABLED=true"
@@ -52,23 +54,32 @@ function run_tests() {
 
   mkdir ${TMPDIR}/docker-graph
   docker run --rm \
+    --platform linux/amd64 \
     -w /go/src/github.com/google/cadvisor \
     -v ${ROOT}:/go/src/github.com/google/cadvisor \
     ${EXTRA_DOCKER_OPTS} \
     --privileged \
     --cap-add="sys_admin" \
     --entrypoint="" \
-    gcr.io/k8s-testimages/bootstrap \
-    bash -c "echo 'deb http://deb.debian.org/debian buster-backports main'>/etc/apt/sources.list.d/buster.list && \
-    cat /etc/apt/sources.list.d/buster.list && \
+    "${BOOTSTRAP_IMAGE}" \
+    bash -c "export DEBIAN_FRONTEND=noninteractive && \
     apt update && \
-    apt install -y -t buster-backports $PACKAGES && \
-    CADVISOR_ARGS="$CADVISOR_ARGS" /usr/local/bin/runner.sh build/integration.sh"
+    apt install -y $PACKAGES && \
+    CADVISOR_ARGS=$CADVISOR_ARGS /usr/local/bin/runner.sh build/integration.sh"
 }
 
 GO_FLAGS=${GO_FLAGS:-"-tags=netgo -race"}
 PACKAGES=${PACKAGES:-"sudo"}
 BUILD_PACKAGES=${BUILD_PACKAGES:-}
 CADVISOR_ARGS=${CADVISOR_ARGS:-}
-GOLANG_VERSION=${GOLANG_VERSION:-"1.16"}
-run_tests "$GO_FLAGS" "$PACKAGES" "$BUILD_PACKAGES" "$CADVISOR_ARGS"
+GOLANG_VERSION=${GOLANG_VERSION:-"1.25"}
+DEBIAN_VERSION=${DEBIAN_VERSION:-"trixie"}
+
+# The staging registry garbage-collects old images, so a pinned tag rots.
+# Discover the newest dated tag instead; set BOOTSTRAP_TAG to pin one.
+BOOTSTRAP_TAG=${BOOTSTRAP_TAG:-$(curl -sSfL https://gcr.io/v2/k8s-staging-test-infra/bootstrap/tags/list \
+  | grep -oE 'v[0-9]{8}-[0-9a-f]+' | sort -ru | head -n1)}
+[ -n "${BOOTSTRAP_TAG}" ] || { echo "Failed to discover bootstrap image tag" >&2; exit 1; }
+BOOTSTRAP_IMAGE="gcr.io/k8s-staging-test-infra/bootstrap:${BOOTSTRAP_TAG}"
+
+run_tests

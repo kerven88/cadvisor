@@ -11,11 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
 package devicemapper
 
 import (
 	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -131,7 +131,6 @@ func TestRefresh(t *testing.T) {
 		watcher := &ThinPoolWatcher{
 			poolName:       "test pool name",
 			metadataDevice: "/dev/mapper/metadata-device",
-			lock:           &sync.RWMutex{},
 			period:         15 * time.Second,
 			stopChan:       make(chan struct{}),
 			dmsetup:        dmsetup,

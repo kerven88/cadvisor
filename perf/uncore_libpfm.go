@@ -1,4 +1,4 @@
-// +build libpfm,cgo
+//go:build libpfm && cgo
 
 // Copyright 2020 Google Inc. All Rights Reserved.
 //
@@ -24,7 +24,6 @@ package perf
 import "C"
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -38,7 +37,7 @@ import (
 	"k8s.io/klog/v2"
 
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/stats"
+	"github.com/google/cadvisor/lib/stats"
 )
 
 type pmu struct {
@@ -69,7 +68,7 @@ func getPMU(pmus uncorePMUs, gotType uint32) (*pmu, error) {
 type uncorePMUs map[string]pmu
 
 func readUncorePMU(path string, name string, cpumaskRegexp *regexp.Regexp) (*pmu, error) {
-	buf, err := ioutil.ReadFile(filepath.Join(path, pmuTypeFilename))
+	buf, err := os.ReadFile(filepath.Join(path, pmuTypeFilename))
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +78,7 @@ func readUncorePMU(path string, name string, cpumaskRegexp *regexp.Regexp) (*pmu
 		return nil, err
 	}
 
-	buf, err = ioutil.ReadFile(filepath.Join(path, pmuCpumaskFilename))
+	buf, err = os.ReadFile(filepath.Join(path, pmuCpumaskFilename))
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +157,28 @@ func NewUncoreCollector(cgroupPath string, events PerfEvents, cpuToSocket map[in
 	return collector
 }
 
+func (c *uncoreCollector) createLeaderFileDescriptors(events []Event, groupIndex int, groupPMUs map[Event]uncorePMUs,
+	leaderFileDescriptors map[string]map[uint32]int) (map[string]map[uint32]int, error) {
+	var err error
+	for _, event := range events {
+		eventName, _ := parseEventName(string(event))
+		customEvent, ok := c.eventToCustomEvent[event]
+		if ok {
+			err = c.setupRawEvent(customEvent, groupPMUs[event], groupIndex, leaderFileDescriptors)
+		} else {
+			err = c.setupEvent(eventName, groupPMUs[event], groupIndex, leaderFileDescriptors)
+		}
+		if err != nil {
+			break
+		}
+	}
+	if err != nil {
+		c.deleteGroup(groupIndex)
+		return nil, fmt.Errorf("cannot create config from perf event: %v", err)
+	}
+	return leaderFileDescriptors, nil
+}
+
 func (c *uncoreCollector) setup(events PerfEvents, devicesPath string) error {
 	readUncorePMUs, err := getUncorePMUs(devicesPath)
 	if err != nil {
@@ -190,21 +211,11 @@ func (c *uncoreCollector) setup(events PerfEvents, devicesPath string) error {
 				leaderFileDescriptors[pmu.name][cpu] = groupLeaderFileDescriptor
 			}
 		}
-
-		for _, event := range group.events {
-			eventName, _ := parseEventName(string(event))
-			customEvent, ok := c.eventToCustomEvent[event]
-			if ok {
-				err = c.setupRawEvent(customEvent, groupPMUs[event], i, leaderFileDescriptors)
-			} else {
-				err = c.setupEvent(eventName, groupPMUs[event], i, leaderFileDescriptors)
-			}
-
-			if err != nil {
-				return err
-			}
+		leaderFileDescriptors, err = c.createLeaderFileDescriptors(group.events, i, groupPMUs, leaderFileDescriptors)
+		if err != nil {
+			klog.Error(err)
+			continue
 		}
-
 		// Group is prepared so we should reset and enable counting.
 		for _, pmuCPUs := range leaderFileDescriptors {
 			for _, fd := range pmuCPUs {
@@ -320,20 +331,8 @@ func (c *uncoreCollector) Destroy() {
 	c.cpuFilesLock.Lock()
 	defer c.cpuFilesLock.Unlock()
 
-	for groupIndex, groupPMUs := range c.cpuFiles {
-		for pmu, group := range groupPMUs {
-			for name, cpus := range group.cpuFiles {
-				for cpu, file := range cpus {
-					klog.V(5).Infof("Closing uncore perf_event file descriptor for event %q, PMU %s and CPU %d", name, pmu, cpu)
-					err := file.Close()
-					if err != nil {
-						klog.Warningf("Unable to close perf_event file descriptor for event %q, PMU %s and CPU %d", name, pmu, cpu)
-					}
-				}
-				delete(group.cpuFiles, name)
-			}
-			delete(groupPMUs, pmu)
-		}
+	for groupIndex := range c.cpuFiles {
+		c.deleteGroup(groupIndex)
 		delete(c.cpuFiles, groupIndex)
 	}
 }
@@ -473,6 +472,24 @@ func (c *uncoreCollector) setupRawEvent(event *CustomEvent, pmus uncorePMUs, gro
 	}
 
 	return nil
+}
+
+func (c *uncoreCollector) deleteGroup(groupIndex int) {
+	groupPMUs := c.cpuFiles[groupIndex]
+	for pmu, group := range groupPMUs {
+		for name, cpus := range group.cpuFiles {
+			for cpu, file := range cpus {
+				klog.V(5).Infof("Closing uncore perf event file descriptor for event %q, PMU %s and CPU %d", name, pmu, cpu)
+				err := file.Close()
+				if err != nil {
+					klog.Warningf("Unable to close perf event file descriptor for event %q, PMU %s and CPU %d", name, pmu, cpu)
+				}
+			}
+			delete(group.cpuFiles, name)
+		}
+		delete(groupPMUs, pmu)
+	}
+	delete(c.cpuFiles, groupIndex)
 }
 
 func readPerfUncoreStat(file readerCloser, group group, cpu int, pmu string, cpuToSocket map[int]int) ([]info.PerfUncoreStat, error) {

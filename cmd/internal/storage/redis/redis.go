@@ -21,9 +21,9 @@ import (
 	"time"
 
 	info "github.com/google/cadvisor/info/v1"
-	storage "github.com/google/cadvisor/storage"
+	storage "github.com/google/cadvisor/lib/storage"
 
-	redis "github.com/garyburd/redigo/redis"
+	redis "github.com/gomodule/redigo/redis"
 )
 
 func init() {
@@ -101,11 +101,11 @@ func (s *redisStorage) AddStats(cInfo *info.ContainerInfo, stats *info.Container
 			s.lastWrite = time.Now()
 		}
 	}()
-	if len(seriesToFlush) > 0 {
-		// We use redis's "LPUSH" to push the data to the redis
-		s.conn.Send("LPUSH", s.redisKey, seriesToFlush)
+	if len(seriesToFlush) == 0 {
+		return nil
 	}
-	return nil
+	// We use redis's "LPUSH" to push the data to the redis
+	return s.conn.Send("LPUSH", s.redisKey, seriesToFlush)
 }
 
 func (s *redisStorage) Close() error {

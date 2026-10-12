@@ -31,7 +31,7 @@ import (
 	httpmux "github.com/google/cadvisor/cmd/internal/http/mux"
 	"github.com/google/cadvisor/events"
 	info "github.com/google/cadvisor/info/v1"
-	"github.com/google/cadvisor/manager"
+	"github.com/google/cadvisor/lib/manager"
 
 	"k8s.io/klog/v2"
 )
@@ -40,20 +40,82 @@ const (
 	apiResource = "/api/"
 )
 
+// eventManager serves the /events API. It is created and wired to the manager
+// in RegisterHandlers; the lean library manager has no event-storage machinery,
+// so the binary owns it and feeds it from the manager via an event sink.
+//
+// ponytail: cadvisor runs one manager per process, so a package-level value is
+// enough — no need to thread an *events.EventManager through every handler.
+var eventManager events.EventManager
+
 func RegisterHandlers(mux httpmux.Mux, m manager.Manager) error {
-	apiVersions := getApiVersions()
-	supportedApiVersions := make(map[string]ApiVersion, len(apiVersions))
+	eventManager = events.NewEventManager(parseEventsStoragePolicy())
+	m.SetEventSink(eventManager)
+	startOOMWatcher(eventManager)
+
+	apiVersions := getAPIVersions()
+	supportedAPIVersions := make(map[string]ApiVersion, len(apiVersions))
 	for _, v := range apiVersions {
-		supportedApiVersions[v.Version()] = v
+		supportedAPIVersions[v.Version()] = v
 	}
 
 	mux.HandleFunc(apiResource, func(w http.ResponseWriter, r *http.Request) {
-		err := handleRequest(supportedApiVersions, m, w, r)
+		err := handleRequest(supportedAPIVersions, m, w, r)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 		}
 	})
 	return nil
+}
+
+// parseEventsStoragePolicy builds the events storage policy from the
+// event_storage_* flag values, which the library manager registers (for kubelet
+// flag-compatibility) and exposes. Defining it here, reading the exposed
+// values, avoids re-registering — and double-registering — the same flags.
+func parseEventsStoragePolicy() events.StoragePolicy {
+	policy := events.DefaultStoragePolicy()
+
+	// Parse max age.
+	parts := strings.Split(manager.EventStorageAgeLimit(), ",")
+	for _, part := range parts {
+		items := strings.Split(part, "=")
+		if len(items) != 2 {
+			klog.Warningf("Unknown event storage policy %q when parsing max age", part)
+			continue
+		}
+		dur, err := time.ParseDuration(items[1])
+		if err != nil {
+			klog.Warningf("Unable to parse event max age duration %q: %v", items[1], err)
+			continue
+		}
+		if items[0] == "default" {
+			policy.DefaultMaxAge = dur
+			continue
+		}
+		policy.PerTypeMaxAge[info.EventType(items[0])] = dur
+	}
+
+	// Parse max number.
+	parts = strings.Split(manager.EventStorageEventLimit(), ",")
+	for _, part := range parts {
+		items := strings.Split(part, "=")
+		if len(items) != 2 {
+			klog.Warningf("Unknown event storage policy %q when parsing max event limit", part)
+			continue
+		}
+		val, err := strconv.Atoi(items[1])
+		if err != nil {
+			klog.Warningf("Unable to parse integer from %q: %v", items[1], err)
+			continue
+		}
+		if items[0] == "default" {
+			policy.DefaultMaxNumEvents = val
+			continue
+		}
+		policy.PerTypeMaxNumEvents[info.EventType(items[0])] = val
+	}
+
+	return policy
 }
 
 // Captures the API version, requestType [optional], and remaining request [optional].
@@ -65,7 +127,7 @@ const (
 	apiRequestArgs
 )
 
-func handleRequest(supportedApiVersions map[string]ApiVersion, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
+func handleRequest(supportedAPIVersions map[string]ApiVersion, m manager.Manager, w http.ResponseWriter, r *http.Request) error {
 	start := time.Now()
 	defer func() {
 		klog.V(4).Infof("Request took %s", time.Since(start))
@@ -80,8 +142,8 @@ func handleRequest(supportedApiVersions map[string]ApiVersion, m manager.Manager
 
 	// If the request doesn't have an API version, list those.
 	if request == apiPrefix || request == apiResource {
-		versions := make([]string, 0, len(supportedApiVersions))
-		for v := range supportedApiVersions {
+		versions := make([]string, 0, len(supportedAPIVersions))
+		for v := range supportedAPIVersions {
 			versions = append(versions, v)
 		}
 		sort.Strings(versions)
@@ -100,7 +162,7 @@ func handleRequest(supportedApiVersions map[string]ApiVersion, m manager.Manager
 	requestArgs := strings.Split(requestElements[apiRequestArgs], "/")
 
 	// Check supported versions.
-	versionHandler, ok := supportedApiVersions[version]
+	versionHandler, ok := supportedAPIVersions[version]
 	if !ok {
 		return fmt.Errorf("unsupported API version %q", version)
 	}
@@ -129,16 +191,12 @@ func writeResult(res interface{}, w http.ResponseWriter) error {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(out)
-	return nil
+	_, err = w.Write(out)
+	return err
 
 }
 
 func streamResults(eventChannel *events.EventChannel, w http.ResponseWriter, r *http.Request, m manager.Manager) error {
-	cn, ok := w.(http.CloseNotifier)
-	if !ok {
-		return errors.New("could not access http.CloseNotifier")
-	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		return errors.New("could not access http.Flusher")
@@ -151,8 +209,8 @@ func streamResults(eventChannel *events.EventChannel, w http.ResponseWriter, r *
 	enc := json.NewEncoder(w)
 	for {
 		select {
-		case <-cn.CloseNotify():
-			m.CloseEventChannel(eventChannel.GetWatchId())
+		case <-r.Context().Done():
+			eventManager.StopWatch(eventChannel.GetWatchId())
 			return nil
 		case ev := <-eventChannel.GetChannel():
 			err := enc.Encode(ev)

@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
+
 package cpuload
 
 import (
@@ -19,8 +21,9 @@ import (
 
 	info "github.com/google/cadvisor/info/v1"
 
-	"github.com/google/cadvisor/utils/cpuload/netlink"
 	"k8s.io/klog/v2"
+
+	"github.com/google/cadvisor/utils/cpuload/netlink"
 )
 
 type CpuLoadReader interface {
